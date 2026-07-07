@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { Upload, Download, Trash2, CheckCircle2, AlertTriangle, ShieldAlert, FileText, Database, Lock, KeyRound } from 'lucide-react';
+import * as XLSX from 'xlsx';
 
 interface UploadHistoryItem {
   id: string;
@@ -25,6 +26,99 @@ const isLocal = window.location.hostname === 'localhost' ||
                 window.location.hostname.startsWith('172.');
 
 const API_BASE = import.meta.env.VITE_API_URL || (isLocal ? `http://${window.location.hostname}:5000` : '');
+
+// --------------------------------------------------------------------
+// CLIENT-SIDE PARSING HELPER FUNCTIONS
+// --------------------------------------------------------------------
+function getIndianFYAndQuarter(dateObj: Date) {
+  const year = dateObj.getFullYear();
+  const month = dateObj.getMonth();
+  
+  let fyStart, fyEnd;
+  if (month >= 3) {
+    fyStart = year;
+    fyEnd = (year + 1) % 100;
+  } else {
+    fyStart = year - 1;
+    fyEnd = year % 100;
+  }
+  const fy = `FY ${fyStart}-${fyEnd < 10 ? '0' + fyEnd : fyEnd}`;
+
+  let quarter = 'Q1';
+  if (month >= 3 && month <= 5) quarter = 'Q1';
+  else if (month >= 6 && month <= 8) quarter = 'Q2';
+  else if (month >= 9 && month <= 11) quarter = 'Q3';
+  else if (month >= 0 && month <= 2) quarter = 'Q4';
+
+  return { fy, quarter };
+}
+
+function getCalendarQuarter(dateObj: Date) {
+  const month = dateObj.getMonth();
+  if (month >= 0 && month <= 2) return 'Q1';
+  if (month >= 3 && month <= 5) return 'Q2';
+  if (month >= 6 && month <= 8) return 'Q3';
+  return 'Q4';
+}
+
+function normalizeCategory(catStr: string) {
+  if (!catStr) return null;
+  const lower = catStr.trim().toLowerCase();
+  if (lower.includes('mutual fund') || lower === 'mf') return 'Mutual Fund';
+  if (lower === 'pms' || lower.includes('portfolio management')) return 'PMS';
+  if (lower === 'aif' || lower.includes('alternative investment')) return 'AIF';
+  if (lower.includes('bond')) return 'Bonds';
+  if (lower.includes('gift city') || lower === 'gift') return 'GIFT City';
+  if (lower.includes('insurance')) return 'Insurance';
+  if (lower === 'fd' || lower.includes('fixed deposit')) return 'FD';
+  return null;
+}
+
+function parseExcelDate(val: any): Date | null {
+  if (!val) return null;
+
+  if (val instanceof Date && !isNaN(val.getTime())) {
+    return val;
+  }
+
+  if (typeof val === 'number') {
+    const date = new Date((val - 25569) * 86400 * 1000);
+    return isNaN(date.getTime()) ? null : date;
+  }
+
+  const str = String(val).trim();
+  
+  let match = str.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
+  if (match) {
+    const d = new Date(parseInt(match[1]), parseInt(match[2]) - 1, parseInt(match[3]));
+    if (!isNaN(d.getTime())) return d;
+  }
+
+  match = str.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/);
+  if (match) {
+    const d = new Date(parseInt(match[3]), parseInt(match[2]) - 1, parseInt(match[1]));
+    if (!isNaN(d.getTime())) return d;
+  }
+
+  const parsed = new Date(str);
+  if (!isNaN(parsed.getTime())) {
+    return parsed;
+  }
+
+  match = str.match(/^([a-zA-Z]+)\s+(\d{4})$/);
+  if (match) {
+    const monthNames = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+    const fullMonthNames = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"];
+    const mStr = match[1].toLowerCase();
+    let mIdx = monthNames.indexOf(mStr.substring(0, 3));
+    if (mIdx === -1) mIdx = fullMonthNames.indexOf(mStr);
+    if (mIdx !== -1) {
+      return new Date(parseInt(match[2]), mIdx, 1);
+    }
+  }
+
+  return null;
+}
 
 export default function AdminPanel({ role, history = [], onUploadSuccess, onDeleteUpload }: AdminPanelProps) {
   const [file, setFile] = useState<File | null>(null);
@@ -76,7 +170,41 @@ export default function AdminPanel({ role, history = [], onUploadSuccess, onDele
   };
 
   const downloadTemplate = () => {
-    window.open(`${API_BASE}/api/template`, '_blank');
+    try {
+      const wb = XLSX.utils.book_new();
+      const headers = ['Month/Date', 'Firm Name', 'Product Category', 'Revenue Amount', 'Relationship Manager', 'Client Name'];
+      
+      const kfAoa = [
+        headers,
+        ['2025-04-15', 'KF', 'Mutual Fund', '500000', 'Amit Sharma', 'Client A'],
+        ['2025-05-20', 'KF', 'PMS', '350000', 'Priya Patel', 'Client B'],
+        ['2025-06-10', 'KF', 'AIF', '600000', 'Rohan Sen', 'Client C']
+      ];
+      const kfWs = XLSX.utils.aoa_to_sheet(kfAoa);
+      XLSX.utils.book_append_sheet(wb, kfWs, 'KF');
+      
+      const llpAoa = [
+        headers,
+        ['2025-04-18', 'LLP', 'Bonds', '200000', 'Amit Sharma', 'Client D'],
+        ['2025-05-15', 'LLP', 'GIFT City', '450000', 'Priya Patel', 'Client E'],
+        ['2025-06-25', 'LLP', 'Insurance', '300000', 'Rohan Sen', 'Client F']
+      ];
+      const llpWs = XLSX.utils.aoa_to_sheet(llpAoa);
+      XLSX.utils.book_append_sheet(wb, llpWs, 'LLP');
+      
+      const ozaAoa = [
+        headers,
+        ['2025-04-20', 'OZA', 'FD', '150000', 'Amit Sharma', 'Client G'],
+        ['2025-05-10', 'OZA', 'Mutual Fund', '250000', 'Priya Patel', 'Client H'],
+        ['2025-06-30', 'OZA', 'PMS', '400000', 'Rohan Sen', 'Client I']
+      ];
+      const ozaWs = XLSX.utils.aoa_to_sheet(ozaAoa);
+      XLSX.utils.book_append_sheet(wb, ozaWs, 'OZA');
+      
+      XLSX.writeFile(wb, 'revenue_upload_template.xlsx');
+    } catch (err: any) {
+      alert('Failed to generate template: ' + err.message);
+    }
   };
 
   const handleUpload = async (e: React.FormEvent) => {
@@ -86,34 +214,155 @@ export default function AdminPanel({ role, history = [], onUploadSuccess, onDele
     setLoading(true);
     setMessage(null);
 
-    const formData = new FormData();
-    formData.append('file', file);
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      try {
+        const data = evt.target?.result;
+        if (!data) throw new Error("Could not read file data.");
+        
+        const workbook = XLSX.read(data, { type: 'binary', cellDates: true });
+        const requiredSheets = ['KF', 'LLP', 'OZA'];
+        const sheetNames = workbook.SheetNames;
+        
+        const missingSheets = requiredSheets.filter(s => !sheetNames.includes(s));
+        if (missingSheets.length > 0) {
+          throw new Error(`Missing required worksheets: ${missingSheets.join(', ')}. The file must contain three separate sheets named KF, LLP, and OZA.`);
+        }
 
-    try {
-      const response = await fetch(`${API_BASE}/api/upload`, {
-        method: 'POST',
-        body: formData,
-      });
+        const errors: string[] = [];
+        const parsedRecords: any[] = [];
+        const ALLOWED_CATEGORIES = ['Mutual Fund', 'PMS', 'AIF', 'Bonds', 'GIFT City', 'Insurance', 'FD'];
 
-      const result = await response.json();
+        requiredSheets.forEach(sheetName => {
+          const sheet = workbook.Sheets[sheetName];
+          const rawRows = XLSX.utils.sheet_to_json(sheet, { defval: '' }) as any[];
+          
+          if (rawRows.length === 0) return;
+          
+          const firstRow = rawRows[0];
+          const keys = Object.keys(firstRow);
+          
+          const dateKey = keys.find(k => /month|date/i.test(k));
+          const categoryKey = keys.find(k => /category|product/i.test(k));
+          const revenueKey = keys.find(k => /revenue|amount/i.test(k));
+          const rmKey = keys.find(k => /rm|manager|relationship/i.test(k) && !/firm|company/i.test(k));
+          const clientKey = keys.find(k => /client|customer/i.test(k) || (/name/i.test(k) && !/firm|company|rm|manager|relationship/i.test(k)));
 
-      if (response.ok && result.success) {
-        setMessage({ type: 'success', text: result.message });
-        setFile(null);
-        if (fileInputRef.current) fileInputRef.current.value = '';
-        onUploadSuccess();
-      } else {
-        setMessage({
-          type: 'error',
-          text: result.error || 'Failed to upload spreadsheet.',
-          details: result.errors || null
+          if (!dateKey) errors.push(`Sheet "${sheetName}": Missing column for "Month / Date"`);
+          if (!categoryKey) errors.push(`Sheet "${sheetName}": Missing column for "Product Category"`);
+          if (!revenueKey) errors.push(`Sheet "${sheetName}": Missing column for "Revenue Amount"`);
+
+          if (errors.length > 0) return;
+
+          rawRows.forEach((row, rowIndex) => {
+            const rowNum = rowIndex + 2;
+            
+            // Allow completely empty row skip
+            const isRowEmpty = Object.values(row).every(v => v === '');
+            if (isRowEmpty) return;
+
+            const rawDate = row[dateKey!];
+            const parsedDate = parseExcelDate(rawDate);
+            if (!parsedDate) {
+              errors.push(`Sheet "${sheetName}", Row ${rowNum}: Invalid Date/Month format "${rawDate}". Use YYYY-MM-DD or Month Year (e.g. Apr 2025).`);
+              return;
+            }
+
+            const rawCategory = row[categoryKey!];
+            const normalizedCategory = normalizeCategory(String(rawCategory));
+            if (!normalizedCategory) {
+              errors.push(`Sheet "${sheetName}", Row ${rowNum}: Unsupported Category "${rawCategory}". Allowed: ${ALLOWED_CATEGORIES.join(', ')}.`);
+              return;
+            }
+
+            const rawRevenue = row[revenueKey!];
+            const parsedRevenue = parseFloat(String(rawRevenue).replace(/[^0-9.-]/g, ''));
+            if (isNaN(parsedRevenue)) {
+              errors.push(`Sheet "${sheetName}", Row ${rowNum}: Revenue must be a valid number. Got "${rawRevenue}".`);
+              return;
+            }
+
+            const clientName = clientKey ? String(row[clientKey]).trim() : 'Unspecified Client';
+            const rmName = rmKey ? String(row[rmKey]).trim() : 'Unassigned';
+
+            const { fy, quarter: indianQuarter } = getIndianFYAndQuarter(parsedDate);
+            const calendarYear = parsedDate.getFullYear();
+            const calendarQuarter = getCalendarQuarter(parsedDate);
+            
+            const monthNum = parsedDate.getMonth() + 1;
+            const monthFormatted = monthNum < 10 ? `0${monthNum}` : `${monthNum}`;
+            const dayNum = parsedDate.getDate();
+            const dayFormatted = dayNum < 10 ? `0${dayNum}` : `${dayNum}`;
+
+            parsedRecords.push({
+              date: `${calendarYear}-${monthFormatted}-${dayFormatted}`,
+              month_year: `${calendarYear}-${monthFormatted}`,
+              year: calendarYear,
+              quarter: indianQuarter,
+              fy,
+              calendar_year: calendarYear,
+              calendar_quarter: calendarQuarter,
+              indian_fy: fy,
+              indian_quarter: indianQuarter,
+              month_name: parsedDate.toLocaleString('default', { month: 'long' }),
+              client_name: clientName,
+              category: normalizedCategory,
+              revenue_amount: parsedRevenue,
+              rm_name: rmName,
+              firm: sheetName
+            });
+          });
         });
+
+        if (errors.length > 0) {
+          setMessage({
+            type: 'error',
+            text: 'Validation failed in spreadsheet.',
+            details: errors
+          });
+          setLoading(false);
+          return;
+        }
+
+        if (parsedRecords.length === 0) {
+          throw new Error('All three sheets KF, LLP, and OZA in the Excel file are empty.');
+        }
+
+        // Upload to Google Apps Script Web App
+        const response = await fetch(`${API_BASE}?action=upload`, {
+          method: 'POST',
+          mode: 'cors',
+          headers: { 'Content-Type': 'text/plain' },
+          body: JSON.stringify({
+            action: 'upload',
+            filename: file.name,
+            records: parsedRecords
+          })
+        });
+
+        const result = await response.json();
+        if (result.success) {
+          setMessage({ type: 'success', text: result.message });
+          setFile(null);
+          if (fileInputRef.current) fileInputRef.current.value = '';
+          onUploadSuccess();
+        } else {
+          setMessage({
+            type: 'error',
+            text: result.error || 'Failed to upload records to database.'
+          });
+        }
+      } catch (err: any) {
+        setMessage({ type: 'error', text: err.message || 'Error occurred while processing Excel file.' });
+      } finally {
+        setLoading(false);
       }
-    } catch (err: any) {
-      setMessage({ type: 'error', text: 'Network connection failed. Make sure the backend server is running.' });
-    } finally {
+    };
+    reader.onerror = () => {
+      setMessage({ type: 'error', text: 'Error reading file.' });
       setLoading(false);
-    }
+    };
+    reader.readAsBinaryString(file);
   };
 
   const handlePinChange = async (e: React.FormEvent) => {
@@ -124,10 +373,10 @@ export default function AdminPanel({ role, history = [], onUploadSuccess, onDele
     setPinMessage(null);
 
     try {
-      const response = await fetch(`${API_BASE}/api/change-pin`, {
+      const response = await fetch(`${API_BASE}?action=changePin`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ oldPin: currentPin, newPin }),
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({ action: 'changePin', oldPin: currentPin, newPin }),
       });
 
       const result = await response.json();
@@ -140,7 +389,7 @@ export default function AdminPanel({ role, history = [], onUploadSuccess, onDele
         setPinMessage({ type: 'error', text: result.error || 'Failed to update PIN.' });
       }
     } catch (err) {
-      setPinMessage({ type: 'error', text: 'Network connection failed. Make sure the backend server is running.' });
+      setPinMessage({ type: 'error', text: 'Network connection failed. Make sure the Google Apps Script Web App is deployed.' });
     } finally {
       setPinLoading(false);
     }

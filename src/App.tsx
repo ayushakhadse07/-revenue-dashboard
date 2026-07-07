@@ -65,17 +65,11 @@ export default function App() {
     setPinMessage(null);
 
     try {
-      const response = await fetch(`${API_BASE}/api/verify-pin`, {
+      const response = await fetch(`${API_BASE}?action=verifyPin`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pin: pinInput }),
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({ action: 'verifyPin', pin: pinInput }),
       });
-
-      if (response.status === 401 || response.status === 400) {
-        setPinMessage({ type: 'error', text: 'Invalid Security PIN' });
-        setPinLoading(false);
-        return;
-      }
 
       if (!response.ok) {
         setPinMessage({ type: 'error', text: 'Unable to verify PIN. Please try again.' });
@@ -125,13 +119,14 @@ export default function App() {
     setError(null);
     try {
       const queryParams = new URLSearchParams();
+      queryParams.append('action', 'dashboard');
       if (filters.fy) queryParams.append('fy', filters.fy);
       if (filters.firm) queryParams.append('firm', filters.firm);
       if (filters.product) queryParams.append('product', filters.product);
       if (filters.rm) queryParams.append('rm', filters.rm);
       queryParams.append('yearType', filters.yearType);
 
-      const response = await fetch(`${API_BASE}/api/dashboard?${queryParams.toString()}`);
+      const response = await fetch(`${API_BASE}?${queryParams.toString()}`);
       if (!response.ok) throw new Error('Failed to load dashboard aggregates.');
       const result = await response.json();
       if (result.success) {
@@ -145,9 +140,9 @@ export default function App() {
     } catch (err: any) {
       console.error(err);
       if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1' && !window.location.hostname.startsWith('192.168.')) {
-        setError('Could not connect to the backend database. Please ensure you have configured the VITE_API_URL environment variable in Netlify to point to your deployed backend API URL.');
+        setError('Could not connect to the database. Please ensure you have configured the VITE_API_URL environment variable in Netlify to point to your deployed Google Apps Script Web App URL.');
       } else {
-        setError(`Could not connect to the backend database. Make sure the Node server is running on ${API_BASE}`);
+        setError(`Could not connect to the database. Make sure your Google Apps Script Web App is deployed and VITE_API_URL is configured in your .env file.`);
       }
     } finally {
       setLoading(false);
@@ -157,7 +152,7 @@ export default function App() {
   const fetchHistory = async () => {
     if (!isAuthenticated) return;
     try {
-      const response = await fetch(`${API_BASE}/api/history`);
+      const response = await fetch(`${API_BASE}?action=history`);
       if (!response.ok) throw new Error('Failed to load upload history.');
       const result = await response.json();
       if (result.success) {
@@ -182,8 +177,10 @@ export default function App() {
 
   const handleDeleteUpload = async (id: string) => {
     try {
-      const response = await fetch(`${API_BASE}/api/upload/${id}`, {
-        method: 'DELETE'
+      const response = await fetch(`${API_BASE}?action=deleteUpload`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({ action: 'deleteUpload', uploadId: id })
       });
       const result = await response.json();
       if (result.success) {

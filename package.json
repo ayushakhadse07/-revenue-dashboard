@@ -4,11 +4,9 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "client": "vite",
-    "server": "node backend/server.cjs",
-    "dev": "concurrently \"npm run server\" \"npm run client\"",
+    "dev": "vite",
     "build": "tsc -b && vite build",
-    "start": "node backend/server.cjs",
+    "start": "vite preview",
     "lint": "oxlint",
     "preview": "vite preview"
   },
