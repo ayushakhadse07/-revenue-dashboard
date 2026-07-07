@@ -25,7 +25,7 @@ const isLocal = window.location.hostname === 'localhost' ||
                 window.location.hostname.startsWith('10.') ||
                 window.location.hostname.startsWith('172.');
 
-const API_BASE = import.meta.env.VITE_API_URL || (isLocal ? `http://${window.location.hostname}:5000` : '');
+const API_BASE = import.meta.env.VITE_API_URL || 'https://script.google.com/macros/s/AKfycbx2fw7ppfhw0U3HATiLtuACSRDrZNnDj55YYeqyxVQZYZDGbsJTFSphGyxvFsgRNpyT/exec';
 
 // --------------------------------------------------------------------
 // CLIENT-SIDE PARSING HELPER FUNCTIONS
